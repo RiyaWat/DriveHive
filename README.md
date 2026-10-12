@@ -31,7 +31,7 @@ I built DriveHive because car people deserve a place made for them: post your bu
 
 ## Live demo
 
-**▶ Try it:** _coming soon — `https://<your-app>.vercel.app`_
+**▶ Try it:** [drivehive-ten.vercel.app](https://drivehive-ten.vercel.app)
 
 Tap **Try the demo** on the login screen and you're in, no sign-up. I set up the demo account with sample builds, upcoming meets, stories and a mechanic DM thread, and the app re-seeds them whenever the server restarts, so it never looks empty.
 
@@ -134,73 +134,7 @@ DriveHive/
 
 ---
 
-## Getting started (local dev)
 
-You need Node.js 18+ with Yarn 1.22, Python 3.11, and MongoDB (local, or a free Atlas cluster).
-
-**Backend**
-
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env               # then edit MONGO_URL / JWT_SECRET
-uvicorn server:app --port 8001 --reload
-```
-
-On startup the API seeds the demo account and sample content (safe to run repeatedly). Check it with `curl localhost:8001/api/health`.
-
-**Frontend**
-
-```bash
-cd frontend
-yarn install
-echo "REACT_APP_BACKEND_URL=http://localhost:8001" > .env
-yarn start                         # http://localhost:3000
-```
-
-### Environment variables (backend)
-
-| Name | Required | What it does |
-|---|---|---|
-| `MONGO_URL` | yes | MongoDB connection string (Atlas: `mongodb+srv://...`) |
-| `DB_NAME` | yes | Database name, e.g. `drivehive` |
-| `JWT_SECRET` | yes | Long random string used to sign logins |
-| `CORS_ORIGINS` | yes in prod | Comma-separated frontend URLs, e.g. `https://drivehive.vercel.app` |
-| `CORS_ORIGIN_REGEX` | no | Extra allowed origins; default allows `https://drivehive*.vercel.app` previews |
-| `COOKIE_SECURE` | no | `true` in production (HTTPS), `false` for local http |
-| `STRIPE_API_KEY` | no | `sk_test_...` enables real test-mode checkout for Boost; without it Boost is a demo |
-| `STRIPE_WEBHOOK_SECRET` | no | Verifies `/api/webhook/stripe` calls |
-| `ADMIN_EMAIL` + `ADMIN_PASSWORD` | no | Both set: an admin account is created. No default admin ships with the app |
-
----
-
-## Deploy it for free (Atlas → Render → Vercel)
-
-This is how I run it for $0. If you fork it, the same steps work for you.
-
-**1. Database: MongoDB Atlas (M0, free)**
-1. Create a free M0 cluster.
-2. *Database Access*: add a user (e.g. `drivehive`) with a generated password.
-3. *Network Access*: allow `0.0.0.0/0` (Render's free tier has no fixed IP).
-4. *Connect → Drivers*: copy the `mongodb+srv://...` string and put your password in it.
-
-**2. API: Render (free web service)**
-1. New → **Blueprint** → pick this repo (it reads `render.yaml`), or New → Web Service with:
-   - Root Directory `backend`
-   - Build Command `pip install -r requirements.txt`
-   - Start Command `uvicorn server:app --host 0.0.0.0 --port $PORT`
-   - Instance type **Free**, env `PYTHON_VERSION=3.11.9`
-2. Env vars: `MONGO_URL` (from Atlas), `DB_NAME=drivehive`, `JWT_SECRET` (any long random string; the blueprint generates one), `CORS_ORIGINS` (your Vercel URL, add it after step 3), `COOKIE_SECURE=true`.
-3. When it's live, `https://<service>.onrender.com/api/health` returns `{"ok": true, "db": true, ...}`.
-
-**3. Frontend: Vercel (Hobby, free)**
-1. Import the repo, Root Directory `frontend` (build settings come from `frontend/vercel.json`).
-2. Env var `REACT_APP_BACKEND_URL` = your Render URL, e.g. `https://drivehive-api.onrender.com` (no trailing slash, no `/api`).
-3. Deploy, then put the Vercel URL into Render's `CORS_ORIGINS` and redeploy the API.
-
----
 
 ## API overview
 
@@ -290,21 +224,6 @@ All endpoints are prefixed with `/api`. Login, register and demo responses inclu
 
 ---
 
-## Testing
-
-The pytest suite runs against a live local API with the fixed test accounts turned on:
-
-```bash
-cd backend
-pip install -r requirements-dev.txt
-SEED_TEST_ACCOUNTS=true ADMIN_EMAIL=admin@drivehive.com ADMIN_PASSWORD=admin123 COOKIE_SECURE=false \
-  uvicorn server:app --port 8001 &
-pytest tests/ -q
-```
-
-The tests cover auth, posts, comments, follows, notifications, search, events, payments / boost, stories (including video), shares, and connections. Last run: 51 passed, 2 skipped (the Stripe checkout cases, which need a test key).
-
----
 
 ## Color palette
 
