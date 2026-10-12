@@ -238,19 +238,6 @@ All endpoints are prefixed with `/api`. Login, register and demo responses inclu
 
 ---
 
-## Roadmap
-
-- [ ] Share dedupe (one share per user per post)
-- [ ] Swipe gestures on the StoryViewer
-- [ ] Story reply → DM owner
-- [ ] RSVP + attendee list on events
-- [ ] Comments count preview on post card
-- [ ] "Top of the week" discovery page
-- [ ] Split `server.py` into routers
-- [ ] Rate limit login + share endpoints
-- [ ] Push notifications (service worker)
-
----
 
 ## Credits
 
