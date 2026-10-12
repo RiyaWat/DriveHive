@@ -2,15 +2,16 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { HiveLogo } from "../components/HiveLogo";
-import { Wrench, House, ArrowRight, Spinner } from "@phosphor-icons/react";
+import { Wrench, House, ArrowRight, Spinner, Lightning } from "@phosphor-icons/react";
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, demoLogin } = useAuth();
   const nav = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [demoBusy, setDemoBusy] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -22,9 +23,13 @@ export default function LoginPage() {
     else setErr(r.error);
   };
 
-  const quickFill = (em, pw) => {
-    setEmail(em);
-    setPassword(pw);
+  const tryDemo = async () => {
+    setDemoBusy(true);
+    setErr("");
+    const r = await demoLogin();
+    setDemoBusy(false);
+    if (r.ok) nav("/");
+    else setErr(r.error);
   };
 
   return (
@@ -68,7 +73,30 @@ export default function LoginPage() {
           <h2 className="font-display text-4xl font-bold tracking-tight">Welcome back.</h2>
           <p className="text-zinc-600 mt-2">Sign in to keep up with the hive.</p>
 
-          <form onSubmit={submit} className="mt-8 space-y-3">
+          <div className="mt-8 p-4 rounded-xl bg-black text-white border-2 border-black">
+            <p className="text-xs uppercase tracking-wider font-bold text-[#FACC15]">Just looking around?</p>
+            <p className="text-sm text-zinc-300 mt-1">
+              Jump into a demo account with sample builds, meets and mechanic chats. No sign-up.
+            </p>
+            <button
+              type="button"
+              onClick={tryDemo}
+              disabled={demoBusy || busy}
+              data-testid="demo-login"
+              className="btn-yellow w-full mt-3 inline-flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {demoBusy ? <Spinner size={16} className="animate-spin" /> : <Lightning size={16} weight="fill" />}
+              Try the demo
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3 mt-6">
+            <div className="h-px bg-[#E4E4E7] flex-1" />
+            <p className="text-xs uppercase tracking-wider font-bold text-zinc-400">or sign in</p>
+            <div className="h-px bg-[#E4E4E7] flex-1" />
+          </div>
+
+          <form onSubmit={submit} className="mt-4 space-y-3">
             <input
               data-testid="login-email"
               type="email"
@@ -108,28 +136,6 @@ export default function LoginPage() {
               Create an account
             </Link>
           </p>
-
-          <div className="mt-8 p-4 rounded-xl bg-[#FAFAFA] border border-[#E4E4E7]">
-            <p className="text-xs uppercase tracking-wider font-bold text-zinc-500">Quick demo logins</p>
-            <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-              <button
-                onClick={() => quickFill("rider@drivehive.com", "rider123")}
-                className="text-left px-3 py-2 rounded-lg hover:bg-white border border-transparent hover:border-[#E4E4E7]"
-                data-testid="demo-rider"
-              >
-                <p className="font-bold">Rider</p>
-                <p className="text-zinc-500 text-xs">rider@drivehive.com</p>
-              </button>
-              <button
-                onClick={() => quickFill("mike@drivehive.com", "mike123")}
-                className="text-left px-3 py-2 rounded-lg hover:bg-white border border-transparent hover:border-[#E4E4E7]"
-                data-testid="demo-mechanic"
-              >
-                <p className="font-bold">Mechanic</p>
-                <p className="text-zinc-500 text-xs">mike@drivehive.com</p>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>

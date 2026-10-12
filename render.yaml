@@ -1,0 +1,29 @@
+# Render Blueprint: free FastAPI web service for DriveHive.
+# Render dashboard -> New -> Blueprint -> pick this repo. It asks for the sync:false values.
+services:
+  - type: web
+    name: drivehive-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: MONGO_URL          # MongoDB Atlas connection string (mongodb+srv://...)
+        sync: false
+      - key: DB_NAME
+        value: drivehive
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS       # your Vercel URL, e.g. https://drivehive.vercel.app
+        sync: false
+      - key: COOKIE_SECURE
+        value: "true"
+      # Optional:
+      # STRIPE_API_KEY (sk_test_...) turns on real test-mode checkout for Boost;
+      #   without it Boost runs in demo mode and never charges.
+      # ADMIN_EMAIL + ADMIN_PASSWORD (both) create an admin account.

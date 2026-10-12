@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { TopBar, MobileBottomNav } from "./components/TopBar";
 import { CreatePostModal } from "./components/CreatePostModal";
 import { CreateEventModal } from "./components/CreateEventModal";
+import { ServerWakeBanner } from "./components/ServerWakeBanner";
 
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
@@ -103,6 +104,7 @@ function EventsRoute() {
 export default function App() {
   return (
     <AuthProvider>
+      <ServerWakeBanner />
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />

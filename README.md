@@ -18,30 +18,31 @@ Post your build. Find the next meet. Get straight answers from real mechanics.
 
 ## What is it?
 
-DriveHive is a full-stack social network built for car people — a black / yellow / white "bee hive" aesthetic layered on top of an Instagram-style feed, with features tailored to the automotive community:
+I built DriveHive because car people deserve a place made for them: post your build, find the next meet, and ask a real mechanic when something sounds wrong. It's a full-stack social network with a black / yellow / white "bee hive" look on top of an Instagram-style feed. Here's what I built into it:
 
 - 🏁 **Live feed** of builds and meet recaps from other riders
 - 📸 **Stories** (photos + videos) that auto-expire in 24 hours, with an in-app Instagram-style viewer
 - 🗓️ **Events** — user-hosted car meets with a paid **⚡ Boost** option (Stripe-powered)
-- 🔧 **Mechanic DMs** — real registered mechanics you can message for quick advice
+- 🔧 **Mechanic DMs** — message people who signed up as mechanics for quick advice
 - 👥 **Crew DMs** — chat with any rider you follow or who follows you
 - 🔔 Notifications, 🔍 search, ❤️ likes, 💬 comments, ↗️ share-to-crew, 👤 follow / unfollow
 
 ---
 
-## Demo accounts
+## Live demo
 
-After seeding, these accounts work out of the box:
+**▶ Try it:** _coming soon — `https://<your-app>.vercel.app`_
 
-| Role       | Email                    | Password   |
-|------------|--------------------------|------------|
-| Admin      | `admin@drivehive.com`    | `admin123` |
-| Enthusiast | `rider@drivehive.com`    | `rider123` |
-| Mechanic   | `mike@drivehive.com`     | `mike123`  |
-| Mechanic   | `sara@drivehive.com`     | `sara123`  |
-| Mechanic   | `leo@drivehive.com`      | `leo123`   |
+Tap **Try the demo** on the login screen and you're in, no sign-up. I set up the demo account with sample builds, upcoming meets, stories and a mechanic DM thread, and the app re-seeds them whenever the server restarts, so it never looks empty.
 
-> ⚠️ **For demo purposes only.** Change these before shipping to production.
+| Demo login | |
+|---|---|
+| Email | `demo@drivehive.app` |
+| Password | `drivehive-demo` |
+
+> I host the API on a free server that sleeps when nobody's using it. The first visit after a quiet spell shows a "waking up the server (~30s)" banner, then everything is fast.
+>
+> Boost payments run in **demo mode** unless a Stripe test key is configured, so nobody can be charged.
 
 ---
 
@@ -54,7 +55,8 @@ After seeding, these accounts work out of the box:
 | Database | MongoDB (`drivehive_db`) |
 | Storage  | MongoDB GridFS (post photos, story photos/videos, avatars live in the same database) |
 | Payments | Stripe Checkout (official `stripe` Python SDK) for Featured Meet boosts |
-| Auth     | JWT access + refresh tokens in httpOnly cookies (with `SameSite=None; Secure`) |
+| Auth     | bcrypt passwords + JWT. The token is sent as an `Authorization: Bearer` header (works in iPhone Safari, which blocks cross-site cookies); httpOnly `SameSite=None; Secure` cookies are set too |
+| Hosting  | Vercel (frontend) · Render free web service (API) · MongoDB Atlas M0 (database) |
 | Fonts    | Clash Display (display) · Manrope (body) · JetBrains Mono (meta) |
 
 ---
@@ -106,26 +108,27 @@ After seeding, these accounts work out of the box:
 ## Project structure
 
 ```
-/app
+DriveHive/
+├── render.yaml                # Render blueprint for the API (free web service)
 ├── backend/
 │   ├── server.py              # All FastAPI routes (auth, posts, stories, events, messages, payments, storage, search)
-│   ├── requirements.txt
+│   ├── seed.py                # Idempotent demo data (demo account, posts, meets, stories, DMs)
+│   ├── storage.py             # Uploads stored in MongoDB GridFS
+│   ├── stripe_checkout.py     # Stripe Checkout helper (Boost)
+│   ├── requirements.txt       # Runtime deps only (requirements-dev.txt adds pytest)
 │   ├── tests/                 # pytest suites
-│   └── .env                   # Not committed. See .env.example below.
+│   └── .env.example
 ├── frontend/
 │   ├── src/
 │   │   ├── App.js
 │   │   ├── context/AuthContext.jsx
-│   │   ├── lib/api.js
-│   │   ├── components/        # TopBar, Avatar, StoryViewer, ShareSheet, CreatePostModal, CreateEventModal, BoostModal, CommentsDrawer, NotificationsBell, SearchBox, HiveLogo
-│   │   ├── pages/             # LoginPage, RegisterPage, FeedPage, EventsPage, MechanicsPage, MessagesPage, ProfilePage
+│   │   ├── lib/api.js         # axios client: Bearer token, wake-up retries
+│   │   ├── components/        # TopBar, StoryViewer, BoostModal, ServerWakeBanner, ...
+│   │   ├── pages/             # Login, Register, Feed, Events, Mechanics, Messages, Profile
 │   │   └── index.css          # Bee theme, hive stripes, story rings, animations
-│   ├── public/index.html
-│   ├── package.json
-│   └── .env                   # REACT_APP_BACKEND_URL
-├── memory/
-│   ├── PRD.md                 # Product spec & backlog
-│   └── test_credentials.md    # Seeded test accounts
+│   ├── public/demo/           # Sample photos used by the demo content
+│   ├── vercel.json
+│   └── .env.example           # REACT_APP_BACKEND_URL
 └── README.md
 ```
 
@@ -133,83 +136,75 @@ After seeding, these accounts work out of the box:
 
 ## Getting started (local dev)
 
-### Prerequisites
+You need Node.js 18+ with Yarn 1.22, Python 3.11, and MongoDB (local, or a free Atlas cluster).
 
-- **Node.js** 18+ and **Yarn** 1.22+
-- **Python** 3.10+
-- **MongoDB** 5+ running locally (or a connection string)
-- Optional: a [Stripe](https://stripe.com) test secret key if you want to try the Featured Boost flow
-
-### 1. Clone
-
-```bash
-git clone https://github.com/<your-username>/drivehive.git
-cd drivehive
-```
-
-### 2. Backend
+**Backend**
 
 ```bash
 cd backend
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
-# Create backend/.env (see .env.example below), then:
-uvicorn server:app --host 0.0.0.0 --port 8001 --reload
+cp .env.example .env               # then edit MONGO_URL / JWT_SECRET
+uvicorn server:app --port 8001 --reload
 ```
 
-`backend/.env.example`:
+On startup the API seeds the demo account and sample content (safe to run repeatedly). Check it with `curl localhost:8001/api/health`.
 
-```env
-MONGO_URL="mongodb://localhost:27017"
-DB_NAME="drivehive_db"
-CORS_ORIGINS="*"
-JWT_SECRET="generate-a-64-char-hex-string"
-ADMIN_EMAIL="admin@drivehive.com"
-ADMIN_PASSWORD="admin123"
-APP_NAME="drivehive"
-FRONTEND_URL="http://localhost:3000"
-
-# Optional integrations
-STRIPE_API_KEY=""          # required for Featured Boost payments
-STRIPE_WEBHOOK_SECRET=""   # optional: verifies /api/webhook/stripe calls
-```
-
-> Generate a JWT secret: `python -c "import secrets; print(secrets.token_hex(32))"`
-
-### 3. Frontend
+**Frontend**
 
 ```bash
-cd ../frontend
+cd frontend
 yarn install
-
-# Create frontend/.env:
-# REACT_APP_BACKEND_URL=http://localhost:8001
-
-yarn start
+echo "REACT_APP_BACKEND_URL=http://localhost:8001" > .env
+yarn start                         # http://localhost:3000
 ```
 
-The app will open at http://localhost:3000.
+### Environment variables (backend)
 
-On first backend start, the admin user and mechanic seeds are created automatically.
+| Name | Required | What it does |
+|---|---|---|
+| `MONGO_URL` | yes | MongoDB connection string (Atlas: `mongodb+srv://...`) |
+| `DB_NAME` | yes | Database name, e.g. `drivehive` |
+| `JWT_SECRET` | yes | Long random string used to sign logins |
+| `CORS_ORIGINS` | yes in prod | Comma-separated frontend URLs, e.g. `https://drivehive.vercel.app` |
+| `CORS_ORIGIN_REGEX` | no | Extra allowed origins; default allows `https://drivehive*.vercel.app` previews |
+| `COOKIE_SECURE` | no | `true` in production (HTTPS), `false` for local http |
+| `STRIPE_API_KEY` | no | `sk_test_...` enables real test-mode checkout for Boost; without it Boost is a demo |
+| `STRIPE_WEBHOOK_SECRET` | no | Verifies `/api/webhook/stripe` calls |
+| `ADMIN_EMAIL` + `ADMIN_PASSWORD` | no | Both set: an admin account is created. No default admin ships with the app |
 
 ---
 
-## Deploying for free
+## Deploy it for free (Atlas → Render → Vercel)
 
-- **Frontend (Vercel):** import the repo, Root Directory `frontend`, build `CI=false yarn build`, output `build`
-  (both already in `frontend/vercel.json`). Set `REACT_APP_BACKEND_URL` to your backend's URL.
-- **Backend:** FastAPI needs a long-running Python host (Render, Railway, Fly.io free tiers) — not Vercel.
-  Set the env vars above (`MONGO_URL`, `DB_NAME`, `JWT_SECRET` are required). The API already accepts
-  cross-site requests with cookies (`SameSite=None; Secure`), so it must be served over HTTPS.
-- **Database:** a free MongoDB Atlas M0 cluster; put its connection string in `MONGO_URL`.
+This is how I run it for $0. If you fork it, the same steps work for you.
+
+**1. Database: MongoDB Atlas (M0, free)**
+1. Create a free M0 cluster.
+2. *Database Access*: add a user (e.g. `drivehive`) with a generated password.
+3. *Network Access*: allow `0.0.0.0/0` (Render's free tier has no fixed IP).
+4. *Connect → Drivers*: copy the `mongodb+srv://...` string and put your password in it.
+
+**2. API: Render (free web service)**
+1. New → **Blueprint** → pick this repo (it reads `render.yaml`), or New → Web Service with:
+   - Root Directory `backend`
+   - Build Command `pip install -r requirements.txt`
+   - Start Command `uvicorn server:app --host 0.0.0.0 --port $PORT`
+   - Instance type **Free**, env `PYTHON_VERSION=3.11.9`
+2. Env vars: `MONGO_URL` (from Atlas), `DB_NAME=drivehive`, `JWT_SECRET` (any long random string; the blueprint generates one), `CORS_ORIGINS` (your Vercel URL, add it after step 3), `COOKIE_SECURE=true`.
+3. When it's live, `https://<service>.onrender.com/api/health` returns `{"ok": true, "db": true, ...}`.
+
+**3. Frontend: Vercel (Hobby, free)**
+1. Import the repo, Root Directory `frontend` (build settings come from `frontend/vercel.json`).
+2. Env var `REACT_APP_BACKEND_URL` = your Render URL, e.g. `https://drivehive-api.onrender.com` (no trailing slash, no `/api`).
+3. Deploy, then put the Vercel URL into Render's `CORS_ORIGINS` and redeploy the API.
 
 ---
 
 ## API overview
 
-All endpoints are prefixed with `/api`. Authentication uses httpOnly cookies (`access_token`, `refresh_token`). Send with `credentials: "include"` (fetch) or `withCredentials: true` (axios). A `Bearer` header is also accepted.
+All endpoints are prefixed with `/api`. Login, register and demo responses include an `access_token`; send it as `Authorization: Bearer <token>`. httpOnly cookies are also set for browsers that allow them.
 
 <details>
 <summary><strong>Auth</strong></summary>
@@ -217,9 +212,11 @@ All endpoints are prefixed with `/api`. Authentication uses httpOnly cookies (`a
 | Method | Path | Description |
 |---|---|---|
 | POST | `/api/auth/register` | Create an account (`role` = `user` or `mechanic`) |
-| POST | `/api/auth/login` | Log in, returns user + sets cookies |
+| POST | `/api/auth/login` | Log in, returns user + `access_token` (+ cookies) |
+| POST | `/api/auth/demo` | One-tap login into the public demo account |
 | POST | `/api/auth/logout` | Clear cookies |
 | GET  | `/api/auth/me` | Current user |
+| GET  | `/api/health` | Liveness + database check |
 
 </details>
 
@@ -259,8 +256,10 @@ All endpoints are prefixed with `/api`. Authentication uses httpOnly cookies (`a
 | POST   | `/api/events` |
 | GET    | `/api/events` (featured first) |
 | DELETE | `/api/events/{id}` |
+| GET    | `/api/payments/config` (`enabled: false` = demo mode) |
 | GET    | `/api/payments/packages` |
 | POST   | `/api/events/{id}/boost/checkout` → Stripe URL |
+| POST   | `/api/events/{id}/boost/demo` (only without a Stripe key) |
 | GET    | `/api/payments/status/{session_id}` |
 | POST   | `/api/webhook/stripe` |
 
@@ -293,12 +292,17 @@ All endpoints are prefixed with `/api`. Authentication uses httpOnly cookies (`a
 
 ## Testing
 
+The pytest suite runs against a live local API with the fixed test accounts turned on:
+
 ```bash
 cd backend
-pytest tests/ -v
+pip install -r requirements-dev.txt
+SEED_TEST_ACCOUNTS=true ADMIN_EMAIL=admin@drivehive.com ADMIN_PASSWORD=admin123 COOKIE_SECURE=false \
+  uvicorn server:app --port 8001 &
+pytest tests/ -q
 ```
 
-The suite covers auth, posts, comments, follows, notifications, search, events, payments / boost, stories (including video), shares, and connections. At last run: **37 / 37 green**.
+The tests cover auth, posts, comments, follows, notifications, search, events, payments / boost, stories (including video), shares, and connections. Last run: 51 passed, 2 skipped (the Stripe checkout cases, which need a test key).
 
 ---
 
@@ -334,7 +338,16 @@ The suite covers auth, posts, comments, follows, notifications, search, events, 
 - Design system & bee-hive aesthetic built on top of [shadcn/ui](https://ui.shadcn.com) + [Tailwind](https://tailwindcss.com)
 - Icons: [Phosphor Icons](https://phosphoricons.com)
 - Fonts: [Clash Display](https://www.fontshare.com/fonts/clash-display) by Indian Type Foundry + [Manrope](https://manrope.co) by Mikhail Sharanda
-- Built by Ry Reign
+- Demo photos from Wikimedia Commons, resized: [Honda Civic Type R](https://commons.wikimedia.org/wiki/File:Honda_Civic_Type_R_(FK8)_Washington_DC_Metro_Area,_USA.jpg) by OWS Photography (CC BY 4.0) ·
+  [Subaru WRX STI](https://commons.wikimedia.org/wiki/File:Moscow,_Subaru_WRX_STI_blue,_Mar_2026_02.jpg) (CC0) ·
+  [Mazda MX-5](https://commons.wikimedia.org/wiki/File:Mazda_MX-5_(NA)_114430.jpg) (CC0) ·
+  [Toyota Supra](https://commons.wikimedia.org/wiki/File:Toyota_Supra_mk4.jpg) (CC0) ·
+  [Nissan Skyline GT-R R34](https://commons.wikimedia.org/wiki/File:2001_Nissan_Skyline_GT-R_V-Spec_II_R34_(56664).jpg) by Calreyn88 (CC BY-SA 4.0) ·
+  [Honda City Turbo II engine bay](https://commons.wikimedia.org/wiki/File:Honda_City_Turbo_II_engine_bay.jpg) by TKOIII (CC BY 4.0) ·
+  [Parking deck](https://commons.wikimedia.org/wiki/File:FIRST_ONES_HERE_(Unsplash).jpg) by Martin Sanchez (CC0) ·
+  [Civic Type R at Osaka Auto Messe](https://commons.wikimedia.org/wiki/File:Osaka_Auto_Messe_2018_(426)_-_Honda_CIVIC_TYPE_R_(DBA-FK8).jpg) by Tokumeigakarinoaoshima (CC BY-SA 4.0) ·
+  [BMW M3 E30](https://commons.wikimedia.org/wiki/File:BMW_M3_(E30)_of_Peter_Brock_at_the_2025_Adelaide_Grand_Final.jpg) by Yu Chu Chin (CC BY-SA 4.0)
+- Designed and built by me, Ry Reign
 
 ---
 

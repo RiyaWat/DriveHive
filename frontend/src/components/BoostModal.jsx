@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { X, Lightning, Check, Spinner } from "@phosphor-icons/react";
+import { toast } from "sonner";
 import { api, formatApiErrorDetail } from "../lib/api";
 
-export function BoostModal({ event, open, onClose }) {
+export function BoostModal({ event, open, onClose, onBoosted }) {
   const [packages, setPackages] = useState([]);
+  // null = unknown yet, true = real Stripe (test mode) checkout, false = demo mode
+  const [paymentsLive, setPaymentsLive] = useState(null);
   const [selected, setSelected] = useState("boost_7d");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -12,13 +15,33 @@ export function BoostModal({ event, open, onClose }) {
     if (!open) return;
     api
       .get("/payments/packages")
-      .then((r) => setPackages(r.data))
+      .then((r) => setPackages(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
+    api
+      .get("/payments/config")
+      .then((r) => setPaymentsLive(!!r.data?.enabled))
+      .catch(() => setPaymentsLive(false));
   }, [open]);
 
   if (!open || !event) return null;
 
+  const demoBoost = async () => {
+    setBusy(true);
+    setErr("");
+    try {
+      await api.post(`/events/${event.id}/boost/demo`, { package_id: selected, origin_url: window.location.origin });
+      toast.success("Boosted! (demo mode, nothing was charged)");
+      setBusy(false);
+      onClose?.();
+      onBoosted?.();
+    } catch (e) {
+      setErr(formatApiErrorDetail(e.response?.data?.detail) || e.message);
+      setBusy(false);
+    }
+  };
+
   const buy = async () => {
+    if (paymentsLive === false) return demoBoost();
     setBusy(true);
     setErr("");
     try {
@@ -98,11 +121,23 @@ export function BoostModal({ event, open, onClose }) {
             })}
           </div>
 
+          {paymentsLive === false && (
+            <div
+              className="mt-4 p-3 rounded-xl bg-[#FACC15]/15 border-2 border-[#FACC15] text-sm"
+              data-testid="boost-demo-mode"
+            >
+              <p className="font-bold">Payments are in demo mode</p>
+              <p className="text-zinc-700 mt-0.5">
+                No card needed and nothing gets charged. Tap below to see how a boosted meet looks.
+              </p>
+            </div>
+          )}
+
           {err && <p className="text-sm text-red-600 mt-3" data-testid="boost-error">{err}</p>}
 
           <div className="flex items-center justify-between mt-5">
             <p className="text-[11px] uppercase tracking-wider font-bold text-zinc-500">
-              Secured by Stripe · test mode
+              {paymentsLive === false ? "Demo mode · no charge" : "Secured by Stripe · test mode"}
             </p>
             <div className="flex gap-2">
               <button onClick={onClose} className="btn-ghost" data-testid="boost-cancel">Cancel</button>
@@ -113,7 +148,7 @@ export function BoostModal({ event, open, onClose }) {
                 className="btn-yellow inline-flex items-center gap-1.5 disabled:opacity-60"
               >
                 {busy ? <Spinner size={14} className="animate-spin" /> : <Lightning size={14} weight="fill" />}
-                Pay & boost
+                {paymentsLive === false ? "Boost (demo)" : "Pay & boost"}
               </button>
             </div>
           </div>

@@ -265,7 +265,12 @@ export default function EventsPage({ openEvent }) {
         </>
       )}
 
-      <BoostModal event={boostEvent} open={!!boostEvent} onClose={() => setBoostEvent(null)} />
+      <BoostModal
+        event={boostEvent}
+        open={!!boostEvent}
+        onClose={() => setBoostEvent(null)}
+        onBoosted={load}
+      />
     </div>
   );
 }

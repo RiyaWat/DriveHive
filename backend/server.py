@@ -4,6 +4,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 import os
+import re
 import asyncio
 import uuid
 import logging
@@ -24,6 +25,7 @@ from stripe_checkout import (
     CheckoutStatusResponse,
 )
 from storage import init_storage, put_object, get_object, APP_NAME
+from seed import seed_demo_data, seed_test_accounts, DEMO_EMAIL
 
 # -----------------------------------------------------------------------------
 # DB / Logging
@@ -73,20 +75,38 @@ def create_refresh_token(user_id: str) -> str:
     return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 
+def _cookie_secure() -> bool:
+    """Cookies must be Secure (and SameSite=None) when the frontend and API are on
+    different HTTPS sites, e.g. x.vercel.app -> y.onrender.com. Plain-http local dev
+    can't set Secure cookies, so COOKIE_SECURE=false turns that off. Default: on,
+    unless the app is clearly running locally (no RENDER env and no explicit setting)."""
+    val = os.environ.get("COOKIE_SECURE")
+    if val is not None:
+        return val.strip().lower() in ("1", "true", "yes", "on")
+    return bool(os.environ.get("RENDER"))  # Render sets RENDER=true on its services
+
+
 def set_auth_cookies(response: Response, user_id: str, email: str):
+    """Sets httpOnly cookies AND returns the access token so the frontend can send it as
+    `Authorization: Bearer ...`. The header is what makes login work on iPhone Safari,
+    which blocks third-party (cross-site) cookies by default."""
     access = create_access_token(user_id, email)
     refresh = create_refresh_token(user_id)
-    response.set_cookie("access_token", access, httponly=True, secure=True, samesite="none", max_age=60 * 60 * 24, path="/")
-    response.set_cookie("refresh_token", refresh, httponly=True, secure=True, samesite="none", max_age=60 * 60 * 24 * 7, path="/")
+    secure = _cookie_secure()
+    samesite = "none" if secure else "lax"
+    response.set_cookie("access_token", access, httponly=True, secure=secure, samesite=samesite, max_age=60 * 60 * 24, path="/")
+    response.set_cookie("refresh_token", refresh, httponly=True, secure=secure, samesite=samesite, max_age=60 * 60 * 24 * 7, path="/")
     return access
 
 
 async def get_current_user(request: Request) -> dict:
-    token = request.cookies.get("access_token")
+    # Prefer the Authorization header (works everywhere, incl. iPhone Safari), then the cookie.
+    token = None
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip() or None
     if not token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
+        token = request.cookies.get("access_token")
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
@@ -214,9 +234,10 @@ async def register(req: RegisterReq, response: Response):
         "created_at": now_iso(),
     }
     await db.users.insert_one(doc)
-    set_auth_cookies(response, user_id, email)
+    token = set_auth_cookies(response, user_id, email)
     doc.pop("_id", None)
     doc.pop("password_hash", None)
+    doc["access_token"] = token
     return doc
 
 
@@ -226,17 +247,47 @@ async def login(req: LoginReq, response: Response):
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(req.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    set_auth_cookies(response, user["id"], email)
+    token = set_auth_cookies(response, user["id"], email)
     user.pop("_id", None)
     user.pop("password_hash", None)
+    user["access_token"] = token
+    return user
+
+
+@api.post("/auth/demo")
+async def demo_login(response: Response):
+    """One-tap login into the public demo account (no typing needed)."""
+    user = await db.users.find_one({"email": DEMO_EMAIL})
+    if not user:
+        await seed_demo_data(db, hash_password)
+        user = await db.users.find_one({"email": DEMO_EMAIL})
+    if not user:
+        raise HTTPException(status_code=503, detail="Demo account is not ready yet")
+    token = set_auth_cookies(response, user["id"], user["email"])
+    user.pop("_id", None)
+    user.pop("password_hash", None)
+    user["access_token"] = token
     return user
 
 
 @api.post("/auth/logout")
 async def logout(response: Response):
-    response.delete_cookie("access_token", path="/")
-    response.delete_cookie("refresh_token", path="/")
+    secure = _cookie_secure()
+    samesite = "none" if secure else "lax"
+    response.delete_cookie("access_token", path="/", secure=secure, samesite=samesite)
+    response.delete_cookie("refresh_token", path="/", secure=secure, samesite=samesite)
     return {"ok": True}
+
+
+@api.get("/health")
+async def health():
+    """Liveness check for Render (and the frontend's "waking up the server" probe)."""
+    try:
+        await db.command("ping")
+        db_ok = True
+    except Exception:
+        db_ok = False
+    return {"ok": True, "db": db_ok, "payments": "live" if STRIPE_API_KEY else "demo"}
 
 
 @api.get("/auth/me")
@@ -688,7 +739,7 @@ async def search(q: str = Query(""), _u: dict = Depends(get_current_user)):
     q = (q or "").strip()
     if not q:
         return {"users": [], "posts": []}
-    regex = {"$regex": q, "$options": "i"}
+    regex = {"$regex": re.escape(q), "$options": "i"}
     users = await db.users.find(
         {"$or": [{"name": regex}, {"email": regex}, {"specialty": regex}]},
         {"_id": 0, "password_hash": 0},
@@ -709,10 +760,17 @@ STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "")
 
 def _stripe_checkout(request: Request) -> StripeCheckout:
     if not STRIPE_API_KEY:
-        raise HTTPException(status_code=503, detail="Payments not configured")
+        raise HTTPException(status_code=503, detail="Payments are in demo mode on this deployment, so no card can be charged.")
     host_url = str(request.base_url).rstrip("/")
     webhook_url = f"{host_url}/api/webhook/stripe"
     return StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+
+
+@api.get("/payments/config")
+async def payments_config():
+    """Tells the frontend whether real (test-mode) Stripe checkout is wired up.
+    Without STRIPE_API_KEY the Boost flow runs in demo mode and never charges anyone."""
+    return {"enabled": bool(STRIPE_API_KEY), "mode": "stripe" if STRIPE_API_KEY else "demo"}
 
 
 @api.get("/payments/packages")
@@ -779,6 +837,29 @@ async def create_boost_checkout(
         "fulfilled": False,
     })
     return {"url": session.url, "session_id": session.session_id}
+
+
+@api.post("/events/{event_id}/boost/demo")
+async def demo_boost(event_id: str, req: BoostCheckoutReq, user: dict = Depends(get_current_user)):
+    """Demo-mode boost: only available when no STRIPE_API_KEY is configured.
+    Features the meet without any payment so the flow can be tried end to end."""
+    if STRIPE_API_KEY:
+        raise HTTPException(status_code=400, detail="Real payments are enabled; use checkout")
+    event = await db.events.find_one({"id": event_id})
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if event["user_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="You can only boost your own events")
+    pkg = BOOST_PACKAGES.get(req.package_id)
+    if not pkg:
+        raise HTTPException(status_code=400, detail="Invalid package")
+    current = event.get("featured_until") or ""
+    base = datetime.now(timezone.utc)
+    if current and current > base.isoformat():
+        base = datetime.fromisoformat(current)
+    until = (base + timedelta(days=pkg["days"])).isoformat()
+    await db.events.update_one({"id": event_id}, {"$set": {"featured_until": until, "featured_by": user["id"]}})
+    return {"ok": True, "featured_until": until, "mode": "demo"}
 
 
 async def _fulfill_boost(session_id: str, status_obj: CheckoutStatusResponse):
@@ -877,21 +958,14 @@ async def stripe_webhook(request: Request):
 # -----------------------------------------------------------------------------
 # Startup
 # -----------------------------------------------------------------------------
-SEED_USERS = [
-    {"email": "rider@drivehive.com", "password": "rider123", "name": "Alex Rider", "role": "user",
-     "bio": "JDM enthusiast. Daily a Civic Type R."},
-    {"email": "mike@drivehive.com", "password": "mike123", "name": "Mike Torres", "role": "mechanic",
-     "specialty": "Engine & Drivetrain", "bio": "ASE-certified. 12 years on Hondas, Subarus, Mazdas."},
-    {"email": "sara@drivehive.com", "password": "sara123", "name": "Sara Lin", "role": "mechanic",
-     "specialty": "Suspension & Brakes", "bio": "Track-day prep specialist. Coilovers, BBKs, alignments."},
-    {"email": "leo@drivehive.com", "password": "leo123", "name": "Leo Park", "role": "mechanic",
-     "specialty": "Electrical & Diagnostics", "bio": "EV + ECU tunes. OBD2 wizard."},
-]
-
-
 async def seed_admin():
-    admin_email = os.environ.get("ADMIN_EMAIL", "admin@drivehive.com")
-    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
+    """Only create an admin when BOTH ADMIN_EMAIL and ADMIN_PASSWORD are set.
+    No default admin password ships with the app."""
+    admin_email = (os.environ.get("ADMIN_EMAIL") or "").strip().lower()
+    admin_password = os.environ.get("ADMIN_PASSWORD") or ""
+    if not admin_email or not admin_password:
+        logger.info("ADMIN_EMAIL / ADMIN_PASSWORD not set; no admin account seeded")
+        return
     existing = await db.users.find_one({"email": admin_email})
     if not existing:
         await db.users.insert_one({
@@ -907,20 +981,6 @@ async def seed_admin():
         })
     elif not verify_password(admin_password, existing["password_hash"]):
         await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password)}})
-
-    for u in SEED_USERS:
-        if not await db.users.find_one({"email": u["email"]}):
-            await db.users.insert_one({
-                "id": str(uuid.uuid4()),
-                "email": u["email"],
-                "password_hash": hash_password(u["password"]),
-                "name": u["name"],
-                "role": u["role"],
-                "bio": u.get("bio", ""),
-                "specialty": u.get("specialty", ""),
-                "avatar_url": "",
-                "created_at": now_iso(),
-            })
 
 
 @app.on_event("startup")
@@ -939,6 +999,9 @@ async def on_startup():
         await db.payment_transactions.create_index("user_id")
         await db.events.create_index("featured_until")
         await seed_admin()
+        await seed_demo_data(db, hash_password)
+        if os.environ.get("SEED_TEST_ACCOUNTS", "").lower() in ("1", "true", "yes"):
+            await seed_test_accounts(db, hash_password)
         logger.info("Startup OK")
     except Exception as e:
         logger.error(f"Startup error: {e}")
@@ -956,11 +1019,21 @@ async def shutdown_db_client():
 
 app.include_router(api)
 
-# CORS — must allow credentials for cookie-based auth.
-# Browser rejects "*" with allow_credentials=True. Use regex to allow any origin.
+# CORS
+# CORS_ORIGINS: comma-separated list of exact frontend origins, e.g.
+#   https://drivehive.vercel.app,http://localhost:3000
+# CORS_ORIGIN_REGEX (optional): extra pattern; by default any Vercel preview URL of a
+# project whose name starts with "drivehive" is allowed (https://drivehive-*.vercel.app).
+_cors_origins = [o.strip().rstrip("/") for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
+if not _cors_origins:
+    _cors_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+_cors_regex = os.environ.get("CORS_ORIGIN_REGEX") or r"https://drivehive[a-z0-9-]*\.vercel\.app"
+if "*" in _cors_origins:  # "*" can't be combined with credentials; treat it as "any origin"
+    _cors_origins, _cors_regex = [], r".*"
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=".*",
+    allow_origins=_cors_origins,
+    allow_origin_regex=_cors_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
