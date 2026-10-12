@@ -1,0 +1,210 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --hive-yellow: #facc15;
+  --hive-yellow-deep: #eab308;
+  --hive-black: #0a0a0a;
+  --hive-ink: #18181b;
+  --hive-line: #e4e4e7;
+  --hive-soft: #fafafa;
+  --hive-card: #ffffff;
+  --hive-muted: #71717a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: #ffffff;
+  color: var(--hive-black);
+  font-family: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "ss02";
+}
+
+.font-display {
+  font-family: "Clash Display", "Bebas Neue", ui-sans-serif, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.font-mono-tight {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+::selection {
+  background: var(--hive-yellow);
+  color: var(--hive-black);
+}
+
+.hide-scrollbar {
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Diagonal hive stripes (subtle bee-DNA accent) */
+.hive-stripes {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--hive-yellow) 0px,
+    var(--hive-yellow) 12px,
+    #000 12px,
+    #000 24px
+  );
+}
+
+/* Hexagon clip */
+.hex-clip {
+  clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0% 50%);
+}
+
+/* Story ring conic gradient */
+.story-ring {
+  background: conic-gradient(from 180deg, #facc15, #000, #facc15, #eab308, #facc15);
+  padding: 3px;
+}
+
+/* Pulsing live dot */
+@keyframes hive-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(250, 204, 21, 0);
+  }
+}
+.live-dot {
+  animation: hive-pulse 1.6s infinite;
+}
+
+/* Floating action wiggle */
+@keyframes hive-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+.hive-bob:hover {
+  animation: hive-bob 1s ease-in-out infinite;
+}
+
+/* Stagger entrance */
+@keyframes hive-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.hive-rise {
+  animation: hive-rise 0.4s ease-out both;
+}
+
+/* Inputs */
+.hive-input {
+  width: 100%;
+  background: #fff;
+  border: 1px solid var(--hive-line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.hive-input:focus {
+  border-color: #000;
+  box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.4);
+}
+
+/* Buttons */
+.btn-yellow {
+  background: var(--hive-yellow);
+  color: #000;
+  border: 2px solid #000;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 10px 18px;
+  transition: transform 0.15s, background 0.15s;
+}
+.btn-yellow:hover {
+  background: var(--hive-yellow-deep);
+  transform: translateY(-1px);
+}
+.btn-yellow:active {
+  transform: translateY(0);
+}
+
+.btn-black {
+  background: #000;
+  color: #fff;
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-weight: 600;
+  transition: opacity 0.15s;
+}
+.btn-black:hover {
+  opacity: 0.85;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: #000;
+  border: 1px solid var(--hive-line);
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+.btn-ghost:hover {
+  background: var(--hive-soft);
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 48 96% 53%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+}
